@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "webapp",
+  "name": "golf-money",
   "compatibility_date": "2026-02-17",
   "pages_build_output_dir": "./dist",
   "compatibility_flags": [
