@@ -77,27 +77,28 @@ app.post('/api/ocr-scorecard', async (c) => {
 
     const model = c.env.OPENAI_MODEL || 'gpt-4o'
 
-    const openaiResp = await fetch('https://api.openai.com/v1/responses', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model,
-        instructions,
-        input: [
-          {
-            role: 'user',
-            content: [
-              { type: 'input_text', text: userText },
-              { type: 'input_image', image_url: imageData },
-            ],
-          },
+// src/index.tsx 수정 (약 104행 부근)
+const openaiResp = await fetch('https://api.openai.com/v1/chat/completions', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${apiKey}`,
+  },
+  body: JSON.stringify({
+    model: model,
+    messages: [
+      { role: 'system', content: instructions },
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: userText },
+          { type: 'image_url', image_url: { url: imageData } }
         ],
-        max_output_tokens: 2000,
-      }),
-    })
+      },
+    ],
+    max_tokens: 2000,
+  }),
+})
 
     if (!openaiResp.ok) {
       const err = await openaiResp.text()
