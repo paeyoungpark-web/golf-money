@@ -1,43 +1,45 @@
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 
-type Bindings = { OPENAI_API_KEY: string, OPENAI_MODEL: string }
-const app = new Hono<{ Bindings: Bindings }>()
+const app = new Hono<{ Bindings: { OPENAI_API_KEY: string } }>()
 app.use('/api/*', cors())
 
 app.post('/api/ocr-scorecard', async (c) => {
-  try {
-    const { imageData } = await c.req.json<{ imageData: string }>();
-    const apiKey = c.env.OPENAI_API_KEY;
+  const { imageData } = await c.req.json();
+  
+  const prompt = `너는 골프 스코어카드 분석 전문가야. 
+  제공된 이미지는 흑백 처리된 스코어카드야. 다음 지침을 엄격히 따라줘:
+  
+  1. **아이콘 해석**: 숫자 위에 나비나 꽃 모양 아이콘이 있다면 그 값은 무조건 -1(버디)이야.
+  2. **값 추출**: 각 칸에 적힌 숫자를 읽어. 0은 Par, 1은 보기, 2는 더블보기야. 
+     (이미지에서 숫자가 마이너스(-)처럼 보여도 0 이상의 숫자인 경우가 많으니 주의해)
+  3. **검증**: 카드 하단의 'TOTAL' 행에 적힌 숫자와 네가 읽은 각 홀 점수의 합계가 일치하는지 반드시 검산해. 일치하지 않으면 개별 홀 점수를 다시 판독해.
+  4. **응답**: 반드시 아래 JSON 구조로 응답해. 'diffs'는 Par 대비 타수 차이야.
+  
+  {
+    "players": ["이름1", "이름2", "이름3", "이름4"],
+    "holes": [
+      { "hole": 1, "par": 4, "diffs": [0, -1, 2, 2] },
+      ... 18번홀까지
+    ],
+    "totals": [85, 83, 112, 102]
+  }`;
 
-    const instructions = "너는 골프 스코어카드 데이터 추출 전문가야. 흑백 전처리된 이미지의 노이즈를 무시하고 숫자만 추출해.";
-    const userText = `이 스코어카드 이미지에서 정보를 추출해서 JSON으로 응답해줘.
+  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${c.env.OPENAI_API_KEY}`
+    },
+    body: JSON.stringify({
+      model: "gpt-4o",
+      messages: [{ role: "user", content: [{ type: "text", text: prompt }, { type: "image_url", image_url: { url: imageData, detail: "high" } }] }],
+      response_format: { type: "json_object" }
+    })
+  });
 
-지침:
-1. **노이즈 무시**: 숫자 주변의 나비, 꽃 모양 아이콘은 무시하고 배경의 '숫자'만 읽어.
-2. **검증**: 카드 하단의 TOTAL 값과 각 홀 점수의 합계가 일치하도록 추론해서 보정해.
-3. **형식**: 반드시 PAR 대비 차이(diffs) 값으로 변환해서 입력해. (버디=-1, 파=0, 보기=1)
-
-구조:
-{
-  "players": ["이름1", "이름2", "이름3", "이름4"],
-  "holes": [{ "hole": 1, "par": 4, "diffs": [0, 1, -1, 0] }, ...],
-  "totals": [80, 85, 92, 88]
-}`;
-
-    const openaiResp = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({
-        model: c.env.OPENAI_MODEL || 'gpt-4o',
-        messages: [{ role: 'system', content: instructions }, { role: 'user', content: [{ type: 'text', text: userText }, { type: 'image_url', image_url: { url: imageData, detail: 'high' } }] }],
-        response_format: { type: "json_object" }
-      }),
-    });
-
-    const data: any = await openaiResp.json();
-    return c.json(JSON.parse(data.choices[0].message.content));
-  } catch (e: any) { return c.json({ error: e.message }, 500); }
+  const resData: any = await response.json();
+  return c.json(JSON.parse(resData.choices[0].message.content));
 });
 
 export default app
